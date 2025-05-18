@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>MalenaScribe</title>
+
+    <!-- MathJax Configuration -->
+    <script>
+        window.MathJax = {
+            tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+            svg: { fontCache: 'global' }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 800px;
+            margin-top: 20px;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        textarea {
+            width: calc(100% - 22px);
+            padding: 10px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            font-size: 16px;
+            min-height: 80px;
+            resize: vertical;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .output-section {
+            margin-top: 25px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
+            background-color: #fdfdfd;
+        }
+        .output-section h2 {
+            margin-top: 0;
+            color: #34495e;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 8px;
+        }
+        #renderedFormula {
+            font-size: 1.5em;
+            padding: 15px 0;
+            text-align: center;
+            overflow-x: auto;
+        }
+        .explanation-text, .solution-text {
+            white-space: pre-wrap;
+            font-size: 1em;
+            color: #555;
+        }
+        .download-buttons button {
+            margin-right: 10px;
+            margin-top: 10px;
+            background-color: #2ecc71;
+        }
+        .download-buttons button:hover {
+            background-color: #27ae60;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .error-message {
+            color: #e74c3c;
+            background-color: #fdd;
+            border: 1px solid #e74c3c;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>MalenaScribe ✍️</h1>
+        <p>Describe your math expression in natural language (e.g., "integral of x squared from 0 to 1") or semi-formal language (e.g., "E = mc^2").</p>
+        
+        <textarea id="mathDescription" placeholder="e.g., the quadratic formula"></textarea>
+        <button onclick="submitDescription()">Generate Formula ✨</button>
+
+        <div id="loader" class="loader"></div>
+        <div id="errorDisplay" class="error-message" style="display:none;"></div>
+
+        <div id="results" style="display:none;">
+            <div class="output-section">
+                <h2>Rendered Formula:</h2>
+                <div id="renderedFormula"></div>
+            </div>
+
+            <div class="output-section">
+                <h2>Explanation:</h2>
+                <pre id="explanationText" class="explanation-text"></pre>
+            </div>
+
+            <div class="output-section">
+                <h2>Solution / Insights:</h2>
+                <pre id="solutionText" class="solution-text"></pre>
+            </div>
+
+            <div class="download-buttons output-section">
+                <h2>Download:</h2>
+                <button onclick="downloadLatex()">Download .tex</button>
+                <button onclick="downloadMarkdown()">Download .md</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api/generate-formula';
+
+        const descriptionInput = document.getElementById('mathDescription');
+        const renderedFormulaDiv = document.getElementById('renderedFormula');
+        const explanationTextPre = document.getElementById('explanationText');
+        const solutionTextPre = document.getElementById('solutionText');
+        const resultsDiv = document.getElementById('results');
+        const loaderDiv = document.getElementById('loader');
+        const errorDisplayDiv = document.getElementById('errorDisplay');
+
+        let currentFormulaData = null;
+
+        async function submitDescription() {
+            const description = descriptionInput.value.trim();
+            if (!description) {
+                displayError("Please enter a math description.");
+                return;
+            }
+
+            loaderDiv.style.display = 'block';
+            resultsDiv.style.display = 'none';
+            errorDisplayDiv.style.display = 'none';
+            currentFormulaData = null;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ description })
+                });
+
+                loaderDiv.style.display = 'none';
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ detail: "Unknown error occurred." }));
+                    throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                currentFormulaData = data;
+
+                if (data.error) {
+                    displayError(`Error from API: ${data.error}`);
+                    return;
+                }
+
+                if (data.latex_formula) {
+                    renderedFormulaDiv.innerHTML = `$$${data.latex_formula}$$`;
+                    if (window.MathJax && window.MathJax.typesetPromise) {
+                        await MathJax.typesetPromise([renderedFormulaDiv]);
+                    }
+                } else {
+                    renderedFormulaDiv.innerHTML = "<p>No formula provided.</p>";
+                }
+
+                explanationTextPre.textContent = data.explanation || "No explanation available.";
+                solutionTextPre.textContent = data.solution || "No solution available.";
+                resultsDiv.style.display = 'block';
+
+            } catch (error) {
+                loaderDiv.style.display = 'none';
+                console.error('Error:', error);
+                displayError(`Failed to process request: ${error.message}`);
+            }
+        }
+
+        function displayError(message) {
+            errorDisplayDiv.textContent = message;
+            errorDisplayDiv.style.display = 'block';
+            resultsDiv.style.display = 'none';
+        }
+
+        function downloadFile(filename, content, contentType) {
+            const element = document.createElement('a');
+            element.setAttribute('href', `data:${contentType};charset=utf-8,` + encodeURIComponent(content));
+            element.setAttribute('download', filename);
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+
+        function downloadLatex() {
+            if (!currentFormulaData || !currentFormulaData.latex_formula) {
+                alert("No formula data available to download.");
+                return;
+            }
+            const latexContent = `\\documentclass{article}
+\\usepackage{amsmath, amssymb}
+\\usepackage[utf8]{inputenc}
+\\title{My Formula}
+\\date{\\today}
+\\author{Generated by MalenaScribe}
+
+\\begin{document}
+\\maketitle
+
+\\section*{Formula}
+$$${currentFormulaData.latex_formula}$$
+
+\\section*{Explanation}
+${currentFormulaData.explanation.replace(/\n/g, '\n\n')}
+
+\\section*{Solution / Insights}
+${currentFormulaData.solution.replace(/\n/g, '\n\n')}
+
+\\end{document}`;
+            downloadFile('formula.tex', latexContent, 'text/x-latex');
+        }
+
+        function downloadMarkdown() {
+            if (!currentFormulaData || !currentFormulaData.latex_formula) {
+                alert("No formula data available to download.");
+                return;
+            }
+            const markdownContent = `## Formula
+$$${currentFormulaData.latex_formula}$$
+
+## Explanation
+${currentFormulaData.explanation}
+
+## Solution / Insights
+${currentFormulaData.solution}
+`;
+            downloadFile('formula.md', markdownContent, 'text/markdown');
+        }
+
+        descriptionInput.addEventListener('keypress', function(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                submitDescription();
+            }
+        });
+    </script>
+</body>
+</html>
